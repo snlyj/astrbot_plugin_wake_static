@@ -1,0 +1,5 @@
+name: astrbot_plugin_wake_static
+desc: 免 @ 唤醒——主人喊「静」，静即应答（免艾特）
+version: v2.2.0
+author: 静
+repo: https://github.com/snlyj/astrbot_plugin_wake_static
