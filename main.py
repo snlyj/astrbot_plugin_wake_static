@@ -1,4 +1,3 @@
-import os
 import re
 import time
 
@@ -6,7 +5,36 @@ from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
 
-MASTER_ID = os.environ.get("ASTRBOT_MASTER_ID", "")
+MASTER_ID = "255306073"
+
+
+def _patch_whitelist_for_master() -> None:
+    """白名单精准放行补丁：发信人是夫君时，任何群（无论是否在白名单）都直接通过白名单检查。
+
+    内核的白名单阶段在插件阶段之前执行，非白名单群的消息根本到不了插件，
+    所以这里对 WhitelistCheckStage.process 做一次性猴子补丁。
+    是否回话仍由后面的唤醒闸门（本插件的 MasterWakeFilter）决定——夫君没喊「静」，静依旧不应声。
+    """
+    try:
+        from astrbot.core.pipeline.whitelist_check.stage import WhitelistCheckStage
+    except Exception as e:
+        logger.warning(f"[wake_static] 白名单补丁加载失败：{e}")
+        return
+    if getattr(WhitelistCheckStage, "_master_bypass_patched", False):
+        return
+    orig_process = WhitelistCheckStage.process
+
+    async def process(self, event):  # noqa: ANN001, ANN202
+        if str(event.get_sender_id()) == MASTER_ID:
+            return  # 夫君：放行，交给唤醒闸门决定该不该答话
+        return await orig_process(self, event)
+
+    WhitelistCheckStage.process = process
+    WhitelistCheckStage._master_bypass_patched = True
+    logger.info("[wake_static] 白名单补丁已就位：夫君在任何群喊静，静都应答")
+
+
+_patch_whitelist_for_master()
 
 # 命中唤醒词后，群聊接话窗口 120 秒
 WAKE_WINDOW = 120
@@ -63,8 +91,8 @@ class MasterWakeFilter(filter.CustomFilter):
 @register(
     "astrbot_plugin_wake_static",
     "静",
-    "免 @ 唤醒（仅认主人）：主人呼唤静，静必定应答",
-    "2.2.0",
+    "免 @ 唤醒（仅认主人）：主人呼唤静，静必定应答；任何群都拦不住",
+    "2.3.0",
 )
 class WakeStatic(Star):
     def __init__(self, context: Context):
